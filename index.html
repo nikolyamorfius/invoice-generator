@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Генератор рахунків та видаткових накладних</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<style>
+  :root{
+    --ink:#1c2027;
+    --ink-soft:#565f6e;
+    --line:#d8dce2;
+    --line-soft:#eceff3;
+    --bg:#f6f7f9;
+    --panel:#ffffff;
+    --accent:#1f5c4d;
+    --accent-soft:#e7f0ed;
+    --danger:#a13d3d;
+    --radius:8px;
+    font-size:15px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height:1.45;
+  }
+  .app{
+    max-width:1180px;
+    margin:0 auto;
+    padding:28px 20px 80px;
+  }
+  h1{
+    font-size:22px;
+    font-weight:650;
+    margin:0 0 4px;
+  }
+  .subtitle{
+    color:var(--ink-soft);
+    font-size:14px;
+    margin:0 0 24px;
+  }
+  .grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:18px;
+  }
+  @media (max-width:820px){ .grid{ grid-template-columns:1fr; } }
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:18px 20px 20px;
+    margin-bottom:18px;
+  }
+  .panel h2{
+    font-size:14px;
+    font-weight:650;
+    margin:0 0 14px;
+    color:var(--ink);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+  .save-flag{
+    font-size:12px;
+    font-weight:400;
+    color:var(--accent);
+    opacity:0;
+    transition:opacity .3s;
+  }
+  .save-flag.show{opacity:1;}
+  label{
+    display:block;
+    font-size:12.5px;
+    color:var(--ink-soft);
+    margin:10px 0 4px;
+  }
+  label:first-of-type{margin-top:0;}
+  input[type=text], input[type=number], input[type=date], textarea{
+    width:100%;
+    padding:8px 10px;
+    border:1px solid var(--line);
+    border-radius:6px;
+    font-size:14px;
+    font-family:inherit;
+    color:var(--ink);
+    background:#fff;
+  }
+  input:focus, textarea:focus{
+    outline:none;
+    border-color:var(--accent);
+    box-shadow:0 0 0 3px var(--accent-soft);
+  }
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .checkline{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-top:14px;
+    font-size:13.5px;
+    color:var(--ink-soft);
+  }
+  .checkline input{width:auto;}
+  .fieldnote{ font-size:11.5px; color:var(--ink-soft); margin-top:3px; }
+
+  table.items{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:6px;
+  }
+  table.items th{
+    text-align:left;
+    font-size:12px;
+    color:var(--ink-soft);
+    font-weight:600;
+    padding:6px 8px;
+    border-bottom:1px solid var(--line);
+  }
+  table.items td{
+    padding:6px 8px;
+    border-bottom:1px solid var(--line-soft);
+    vertical-align:middle;
+  }
+  table.items input{padding:6px 8px; font-size:13.5px;}
+  .col-num{width:34px; text-align:center; color:var(--ink-soft); font-size:13px;}
+  .col-qty, .col-unit, .col-price{width:90px;}
+  .col-sum{width:110px; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap;}
+  .col-del{width:32px; text-align:center;}
+  .del-row{
+    border:none; background:none; cursor:pointer;
+    color:var(--ink-soft); font-size:16px; line-height:1;
+    padding:2px 6px; border-radius:4px;
+  }
+  .del-row:hover{ color:var(--danger); background:#f3e6e6; }
+
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:9px 16px;
+    border-radius:6px;
+    border:1px solid var(--line);
+    background:#fff;
+    color:var(--ink);
+    font-size:13.5px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .btn:hover{ border-color:#b9c0ca; }
+  .btn-primary{
+    background:var(--accent);
+    border-color:var(--accent);
+    color:#fff;
+  }
+  .btn-primary:hover{ background:#194a3e; }
+  .btn-ghost{
+    background:none;
+    border:1px dashed var(--line);
+    color:var(--ink-soft);
+  }
+  .toolbar{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    margin:20px 0 6px;
+  }
+  .hint{
+    font-size:12.5px;
+    color:var(--ink-soft);
+    margin-top:14px;
+  }
+
+  /* ---- Printable documents (mirrors the uploaded XLS templates) ---- */
+  #docs{ margin-top:26px; }
+  .doc-page{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:26px 30px;
+    margin-bottom:24px;
+    font-size:13px;
+    color:#111;
+  }
+  .doc-block{
+    display:flex;
+    gap:14px;
+    margin-bottom:9px;
+  }
+  .doc-label{
+    flex:0 0 150px;
+    font-weight:650;
+  }
+  .doc-value{ flex:1; }
+  .doc-value div{ margin:0 0 1px; }
+
+  .doc-title-line{
+    font-weight:700;
+    font-size:15px;
+    margin:18px 0 2px;
+    text-align:center;
+  }
+  .doc-date-line{
+    margin-bottom:14px;
+    text-align:center;
+  }
+
+  table.doc-items{
+    width:100%;
+    border-collapse:collapse;
+    margin-bottom:2px;
+  }
+  table.doc-items th, table.doc-items td{
+    border:1px solid #999;
+    padding:5px 7px;
+    font-size:12px;
+  }
+  table.doc-items th{ background:#f0f1f2; font-weight:650; }
+  table.doc-items td.num{ text-align:right; font-variant-numeric:tabular-nums; }
+  table.doc-items td.c{ text-align:center; }
+
+  .doc-totals{
+    text-align:right;
+    margin:6px 0 14px;
+  }
+  .doc-totals div{ margin-bottom:2px; }
+
+  .sum-line-label{ margin-top:10px; }
+  .sum-line-words{ margin-bottom:22px; }
+
+  .signatures{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:24px;
+    margin-top:20px;
+    font-size:12.5px;
+  }
+  .sig-line{
+    border-bottom:1px solid #111;
+    height:26px;
+    min-width:220px;
+  }
+
+  @media print{
+    body{ background:#fff; }
+    .no-print{ display:none !important; }
+    .app{ padding:0; max-width:none; }
+    .doc-page{
+      border:none;
+      border-radius:0;
+      margin:0;
+      padding:0;
+      page-break-after:always;
+    }
+    .doc-page:last-child{ page-break-after:auto; }
+  }
+  @page{ size:A4; margin:14mm; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="no-print">
+    <h1>Рахунок і видаткова накладна</h1>
+    <p class="subtitle">Побудовано за структурою ваших робочих шаблонів. Заповніть поля — документи оновлюються автоматично. Дані вашої організації зберігаються у цьому браузері.</p>
+
+    <div class="grid">
+      <div class="panel">
+        <h2>Постачальник (ваша організація) <span class="save-flag" id="saveFlag">Збережено</span></h2>
+        <label>Назва</label>
+        <input type="text" id="s_name" placeholder="ФОП Прізвище Ім'я По батькові">
+        <label>Код отримувача (ЄДРПОУ/РНОКПП)</label>
+        <input type="text" id="s_edrpou" placeholder="1234567890">
+        <label>Рахунок отримувача (IBAN)</label>
+        <input type="text" id="s_iban" placeholder="UA...">
+        <label>Назва банку</label>
+        <input type="text" id="s_bank" placeholder='АТ "..."'>
+        <div class="checkline">
+          <input type="checkbox" id="s_vat">
+          <label style="margin:0;">Платник ПДВ</label>
+        </div>
+        <label>ПІБ для підпису («Виписав(ла)» / «Від постачальника»)</label>
+        <input type="text" id="s_signer" placeholder="(необов'язково)">
+      </div>
+
+      <div class="panel">
+        <h2>Отримувач (клієнт)</h2>
+        <label>Назва</label>
+        <input type="text" id="c_name" placeholder="Товариство з обмеженою відповідальністю «Клієнт»">
+        <label>Адреса</label>
+        <input type="text" id="c_address" placeholder="Україна, ...">
+        <label>ЄДРПОУ</label>
+        <input type="text" id="c_edrpou" placeholder="12345678">
+        <div class="row2">
+          <div>
+            <label>IBAN клієнта</label>
+            <input type="text" id="c_iban" placeholder="(необов'язково)">
+          </div>
+          <div>
+            <label>МФО</label>
+            <input type="text" id="c_mfo" placeholder="(необов'язково)">
+          </div>
+        </div>
+        <label>Банк клієнта</label>
+        <input type="text" id="c_bank" placeholder="(необов'язково)">
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Дані документа</h2>
+      <div class="row2">
+        <div>
+          <label>№ рахунку</label>
+          <input type="text" id="d_num_invoice">
+        </div>
+        <div>
+          <label>№ накладної</label>
+          <input type="text" id="d_num_nakl">
+        </div>
+      </div>
+      <div class="row2">
+        <div>
+          <label>Дата документів</label>
+          <input type="date" id="d_date">
+        </div>
+        <div>
+          <label>Умова продажу</label>
+          <input type="text" id="d_terms" value="Безготівковий розрахунок">
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Товари</h2>
+      <table class="items" id="itemsTable">
+        <thead>
+          <tr>
+            <th class="col-num">№</th>
+            <th>Назва</th>
+            <th class="col-unit">О.В.</th>
+            <th class="col-qty">К-сть</th>
+            <th class="col-price">Ціна, грн</th>
+            <th class="col-sum">Сума, грн</th>
+            <th class="col-del"></th>
+          </tr>
+        </thead>
+        <tbody id="itemsBody"></tbody>
+      </table>
+      <button class="btn btn-ghost" id="addRowBtn" style="margin-top:10px;">+ Додати товар</button>
+      <p class="hint">Сума по рядку рахується автоматично (кількість × ціна). Порожні рядки в документи не потрапляють.</p>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn btn-primary" id="printInvoiceBtn">Рахунок — друк / PDF</button>
+      <button class="btn btn-primary" id="printNaklBtn">Накладна — друк / PDF</button>
+    </div>
+    <div class="toolbar">
+      <button class="btn btn-primary" id="xlsInvoiceBtn" style="background:#2c6e4f; border-color:#2c6e4f;">Рахунок — Excel (.xlsx)</button>
+      <button class="btn btn-primary" id="xlsNaklBtn" style="background:#2c6e4f; border-color:#2c6e4f;">Накладна — Excel (.xlsx)</button>
+    </div>
+    <div class="toolbar">
+      <button class="btn" id="newDocBtn">Новий документ (номер +1)</button>
+      <button class="btn btn-ghost" id="clearItemsBtn">Очистити товари</button>
+    </div>
+    <p class="hint">Порада: дату/час і шлях до файлу зверху й знизу PDF додає сам браузер (це не частина сторінки). У вікні друку відкрийте «Додаткові налаштування» → знімніть галочку «Верхні та нижні колонтитули» (Headers and footers) — тоді ці рядки не потраплять у PDF.</p>
+  </div>
+
+  <div id="docs"></div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var STORAGE_KEY = "invoiceGen.supplier.v2";
+  var COUNTER_KEY = "invoiceGen.counter.v1";
+
+  var supplierFields = ["s_name","s_edrpou","s_iban","s_bank","s_vat","s_signer"];
+
+  function $(id){ return document.getElementById(id); }
+
+  // ---------- persistence for supplier profile ----------
+  function saveSupplier(){
+    var data = {};
+    supplierFields.forEach(function(id){
+      var el = $(id);
+      data[id] = el.type === "checkbox" ? el.checked : el.value;
+    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    var flag = $("saveFlag");
+    flag.classList.add("show");
+    clearTimeout(flag._t);
+    flag._t = setTimeout(function(){ flag.classList.remove("show"); }, 1200);
+  }
+
+  function loadSupplier(){
+    var raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return;
+    try{
+      var data = JSON.parse(raw);
+      supplierFields.forEach(function(id){
+        if(!(id in data)) return;
+        var el = $(id);
+        if(el.type === "checkbox") el.checked = data[id];
+        else el.value = data[id];
+      });
+    }catch(e){}
+  }
+
+  function nextCounter(){
+    var n = parseInt(localStorage.getItem(COUNTER_KEY) || "0", 10) + 1;
+    return n;
+  }
+
+  // ---------- items table ----------
+  var itemsBody = $("itemsBody");
+  var rowIdSeq = 0;
+
+  function addRow(prefill){
+    rowIdSeq++;
+    var tr = document.createElement("tr");
+    tr.dataset.rowId = rowIdSeq;
+    tr.innerHTML =
+      '<td class="col-num rownum"></td>' +
+      '<td><input type="text" class="f-name" placeholder="Назва товару"></td>' +
+      '<td class="col-unit"><input type="text" class="f-unit" value="шт"></td>' +
+      '<td class="col-qty"><input type="number" class="f-qty" min="0" step="1" value="1"></td>' +
+      '<td class="col-price"><input type="number" class="f-price" min="0" step="0.01" placeholder="0.00"></td>' +
+      '<td class="col-sum f-sum">0.00</td>' +
+      '<td class="col-del"><button type="button" class="del-row" title="Видалити рядок">✕</button></td>';
+    itemsBody.appendChild(tr);
+
+    tr.querySelectorAll("input").forEach(function(inp){
+      inp.addEventListener("input", render);
+    });
+    tr.querySelector(".del-row").addEventListener("click", function(){
+      tr.remove();
+      renumberRows();
+      render();
+    });
+    if(prefill){
+      if(prefill.name) tr.querySelector(".f-name").value = prefill.name;
+      if(prefill.qty) tr.querySelector(".f-qty").value = prefill.qty;
+      if(prefill.unit) tr.querySelector(".f-unit").value = prefill.unit;
+      if(prefill.price) tr.querySelector(".f-price").value = prefill.price;
+    }
+    renumberRows();
+  }
+
+  function renumberRows(){
+    Array.prototype.forEach.call(itemsBody.querySelectorAll("tr"), function(tr, i){
+      tr.querySelector(".rownum").textContent = i + 1;
+    });
+  }
+
+  function getItems(){
+    var out = [];
+    Array.prototype.forEach.call(itemsBody.querySelectorAll("tr"), function(tr){
+      var name = tr.querySelector(".f-name").value.trim();
+      var qty = parseFloat(tr.querySelector(".f-qty").value) || 0;
+      var unit = tr.querySelector(".f-unit").value.trim() || "шт";
+      var price = parseFloat(tr.querySelector(".f-price").value) || 0;
+      var sum = qty * price;
+      tr.querySelector(".f-sum").textContent = sum.toFixed(2);
+      if(name && qty > 0){
+        out.push({ name: name, qty: qty, unit: unit, price: price, sum: sum });
+      }
+    });
+    return out;
+  }
+
+  // ---------- Ukrainian number-to-words (currency) ----------
+  var ONES_M = ["", "один","два","три","чотири","п’ять","шість","сім","вісім","дев’ять"];
+  var ONES_F = ["", "одна","дві","три","чотири","п’ять","шість","сім","вісім","дев’ять"];
+  var TEENS  = ["десять","одинадцять","дванадцять","тринадцять","чотирнадцять","п’ятнадцять","шістнадцять","сімнадцять","вісімнадцять","дев’ятнадцять"];
+  var TENS   = ["", "", "двадцять","тридцять","сорок","п’ятдесят","шістдесят","сімдесят","вісімдесят","дев’яносто"];
+  var HUNDREDS = ["", "сто","двісті","триста","чотириста","п’ятсот","шістсот","сімсот","вісімсот","дев’ятсот"];
+
+  function threeDigitsWords(n, feminine){
+    var words = [];
+    var h = Math.floor(n / 100);
+    var rem = n % 100;
+    if(h) words.push(HUNDREDS[h]);
+    if(rem >= 10 && rem < 20){
+      words.push(TEENS[rem - 10]);
+    } else {
+      var t = Math.floor(rem / 10);
+      var o = rem % 10;
+      if(t) words.push(TENS[t]);
+      if(o) words.push(feminine ? ONES_F[o] : ONES_M[o]);
+    }
+    return words;
+  }
+
+  function pluralForm(n, forms){
+    var mod100 = Math.abs(n) % 100;
+    var mod10 = mod100 % 10;
+    if(mod100 > 10 && mod100 < 20) return forms[2];
+    if(mod10 === 1) return forms[0];
+    if(mod10 >= 2 && mod10 <= 4) return forms[1];
+    return forms[2];
+  }
+
+  function integerToWords(n){
+    if(n === 0) return ["нуль"];
+    var billion = Math.floor(n / 1e9); n %= 1e9;
+    var million  = Math.floor(n / 1e6); n %= 1e6;
+    var thousand = Math.floor(n / 1e3); n %= 1e3;
+    var unit = n;
+    var parts = [];
+    if(billion){
+      parts = parts.concat(threeDigitsWords(billion, false));
+      parts.push(pluralForm(billion, ["мільярд","мільярди","мільярдів"]));
+    }
+    if(million){
+      parts = parts.concat(threeDigitsWords(million, false));
+      parts.push(pluralForm(million, ["мільйон","мільйони","мільйонів"]));
+    }
+    if(thousand){
+      parts = parts.concat(threeDigitsWords(thousand, true));
+      parts.push(pluralForm(thousand, ["тисяча","тисячі","тисяч"]));
+    }
+    if(unit || parts.length === 0){
+      parts = parts.concat(threeDigitsWords(unit, true));
+    }
+    return parts;
+  }
+
+  function sumToWordsUAH(amount){
+    var intPart = Math.floor(amount + 1e-9);
+    var kop = Math.round((amount - intPart) * 100);
+    if(kop === 100){ intPart += 1; kop = 0; }
+    var words = integerToWords(intPart).filter(Boolean);
+    words.push(pluralForm(intPart, ["гривня","гривні","гривень"]));
+    words.push(String(kop).padStart(2, "0"));
+    words.push(pluralForm(kop, ["копійка","копійки","копійок"]));
+    var s = words.join(" ");
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  function fmt(n){
+    return n.toLocaleString("uk-UA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function fmtDate(iso){
+    if(!iso) return "";
+    var d = new Date(iso + "T00:00:00");
+    return d.toLocaleDateString("uk-UA", { day:"2-digit", month:"long", year:"numeric" });
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+    });
+  }
+
+  // ---------- rendering documents (mirrors the uploaded XLS layout) ----------
+  function block(label, lines){
+    lines = lines.filter(function(l){ return l && String(l).trim() !== ""; });
+    if(lines.length === 0) return "";
+    return '<div class="doc-block">' +
+      '<div class="doc-label">' + label + '</div>' +
+      '<div class="doc-value">' + lines.map(function(l){ return '<div>' + escapeHtml(l) + '</div>'; }).join("") + '</div>' +
+      '</div>';
+  }
+
+  function buildItemsRows(items, vat){
+    return items.map(function(it, i){
+      var base = vat ? it.sum / 1.2 : it.sum;
+      var vatSum = vat ? it.sum - base : 0;
+      return '<tr>' +
+        '<td class="c">' + (i+1) + '</td>' +
+        '<td>' + escapeHtml(it.name) + '</td>' +
+        '<td class="c">' + escapeHtml(it.unit) + '</td>' +
+        '<td class="num">' + it.qty + '</td>' +
+        '<td class="num">' + fmt(it.price) + '</td>' +
+        (vat ? '<td class="num">' + fmt(vatSum) + '</td>' : '') +
+        '<td class="num">' + fmt(it.sum) + '</td>' +
+        '</tr>';
+    }).join("");
+  }
+
+  function renderDoc(kind, opts){
+    var vat = opts.vat;
+    var items = opts.items;
+    var total = items.reduce(function(a,b){ return a + b.sum; }, 0);
+    var baseTotal = vat ? total / 1.2 : total;
+    var vatTotal = vat ? total - baseTotal : 0;
+    var totalWords = sumToWordsUAH(total);
+
+    var title = kind === "invoice" ? "РАХУНОК №" + (opts.num || "—") : "Видаткова накладна №" + (opts.num || "—");
+
+    var supplierLines = [
+      opts.s_name,
+      opts.s_edrpou ? "Код отримувача (ЄДРПОУ): " + opts.s_edrpou : "",
+      opts.s_iban ? "Рахунок отримувача: " + opts.s_iban : "",
+      opts.s_bank ? "Назва банку: " + opts.s_bank : "",
+      vat ? "Платник ПДВ" : "Не є платником ПДВ"
+    ];
+
+    var clientLines = [
+      opts.c_name,
+      opts.c_address,
+      opts.c_edrpou ? "ЄДРПОУ " + opts.c_edrpou : "",
+      opts.c_iban || "",
+      opts.c_mfo ? "МФО " + opts.c_mfo : "",
+      opts.c_bank || ""
+    ];
+
+    var headerCols = '<th style="width:26px;">№</th><th>Назва</th><th style="width:60px;">О.В.</th><th style="width:70px;">К-сть</th><th style="width:90px;">Ціна, грн</th>' +
+      (vat ? '<th style="width:90px;">ПДВ 20%</th>' : '') + '<th style="width:100px;">Сума, грн</th>';
+
+    var totalsHtml = vat
+      ? '<div>Всього без ПДВ: ' + fmt(baseTotal) + '</div>' +
+        '<div>у т.ч. ПДВ 20%: ' + fmt(vatTotal) + '</div>' +
+        '<div>Всього з ПДВ: ' + fmt(total) + '</div>'
+      : '<div>Всього без ПДВ: ' + fmt(total) + '</div>';
+
+    var signatures = kind === "invoice"
+      ? '<div>Виписав(ла): ' + escapeHtml(opts.s_signer || "") + '<div class="sig-line"></div></div>' +
+        '<div>Підпис<div class="sig-line"></div></div>'
+      : '<div>Від постачальника*: ' + escapeHtml(opts.s_signer || "") + '<div class="sig-line"></div></div>' +
+        '<div>Отримав(ла):<div class="sig-line"></div></div>';
+
+    return '<div class="doc-page">' +
+      block("Постачальник:", supplierLines) +
+      block("Отримувач:", clientLines) +
+      block("Умова продажу:", [opts.terms]) +
+      '<div class="doc-title-line">' + title + '</div>' +
+      '<div class="doc-date-line">Від ' + fmtDate(opts.date) + '</div>' +
+      '<table class="doc-items"><thead><tr>' + headerCols + '</tr></thead><tbody>' +
+      buildItemsRows(items, vat) +
+      '</tbody></table>' +
+      '<div class="doc-totals">' + totalsHtml + '</div>' +
+      '<div class="sum-line-label">Всього на суму:</div>' +
+      '<div class="sum-line-words">' + totalWords + '.</div>' +
+      '<div class="signatures">' + signatures + '</div>' +
+    '</div>';
+  }
+
+  function collectOpts(){
+    return {
+      s_name: $("s_name").value.trim(),
+      s_edrpou: $("s_edrpou").value.trim(),
+      s_iban: $("s_iban").value.trim(),
+      s_bank: $("s_bank").value.trim(),
+      s_signer: $("s_signer").value.trim(),
+      c_name: $("c_name").value.trim(),
+      c_address: $("c_address").value.trim(),
+      c_edrpou: $("c_edrpou").value.trim(),
+      c_iban: $("c_iban").value.trim(),
+      c_mfo: $("c_mfo").value.trim(),
+      c_bank: $("c_bank").value.trim(),
+      terms: $("d_terms").value.trim(),
+      date: $("d_date").value,
+      vat: $("s_vat").checked,
+      items: getItems()
+    };
+  }
+
+  function sanitizeFileName(s){
+    return String(s || "").trim().replace(/[\\/:*?"<>|]+/g, "").replace(/\s+/g, "_");
+  }
+
+  function docFileBaseName(kind, clientName){
+    var client = sanitizeFileName(clientName) || "Клієнт";
+    return (kind === "invoice" ? "Рахунок_" : "Видаткова_накладна_") + client;
+  }
+
+  function printOne(kind){
+    var opts = collectOpts();
+    if(opts.items.length === 0){
+      alert("Додайте хоча б один товар.");
+      return;
+    }
+    var num = kind === "invoice" ? $("d_num_invoice").value.trim() : $("d_num_nakl").value.trim();
+    var docsEl = $("docs");
+    var previous = docsEl.innerHTML;
+    var previousTitle = document.title;
+    document.title = docFileBaseName(kind, opts.c_name);
+    docsEl.innerHTML = renderDoc(kind, Object.assign({}, opts, { num: num }));
+    window.print();
+    docsEl.innerHTML = previous;
+    document.title = previousTitle;
+  }
+
+  function render(){
+    var opts = collectOpts();
+    var docsEl = $("docs");
+    if(opts.items.length === 0){
+      docsEl.innerHTML = '<p class="no-print hint">Додайте хоча б один товар, щоб побачити документи.</p>';
+      return;
+    }
+
+    docsEl.innerHTML =
+      renderDoc("invoice", Object.assign({}, opts, { num: $("d_num_invoice").value.trim() })) +
+      renderDoc("nakladna", Object.assign({}, opts, { num: $("d_num_nakl").value.trim() }));
+  }
+
+  // ---------- Excel (.xlsx) export, mirrors the same block layout ----------
+  var THIN_BORDER = {
+    top:{style:"thin"}, left:{style:"thin"}, bottom:{style:"thin"}, right:{style:"thin"}
+  };
+
+  function addDocSheet(wb, sheetName, kind, opts){
+    var ws = wb.addWorksheet(sheetName);
+    ws.columns = [
+      { width: 3 }, { width: 5 }, { width: 30 }, { width: 10 },
+      { width: 10 }, { width: 12 }, { width: 12 }, { width: 14 }
+    ];
+
+    var vat = opts.vat;
+    var items = opts.items;
+    var total = items.reduce(function(a,b){ return a + b.sum; }, 0);
+    var baseTotal = vat ? total / 1.2 : total;
+    var vatTotal = vat ? total - baseTotal : 0;
+
+    var supplierLines = [
+      opts.s_name,
+      opts.s_edrpou ? "Код отримувача (ЄДРПОУ): " + opts.s_edrpou : "",
+      opts.s_iban ? "Рахунок отримувача: " + opts.s_iban : "",
+      opts.s_bank ? "Назва банку: " + opts.s_bank : "",
+      vat ? "Платник ПДВ" : "Не є платником ПДВ"
+    ].filter(Boolean);
+
+    var clientLines = [
+      opts.c_name,
+      opts.c_address,
+      opts.c_edrpou ? "ЄДРПОУ " + opts.c_edrpou : "",
+      opts.c_iban || "",
+      opts.c_mfo ? "МФО " + opts.c_mfo : "",
+      opts.c_bank || ""
+    ].filter(Boolean);
+
+    var r = 1;
+
+    function labelValueBlock(label, lines){
+      if(!lines.length) return;
+      ws.getCell(r, 2).value = label;
+      ws.getCell(r, 2).font = { bold: true };
+      lines.forEach(function(line, idx){
+        var row = r + idx;
+        ws.mergeCells(row, 4, row, 8);
+        ws.getCell(row, 4).value = line;
+      });
+      r += lines.length + 1;
+    }
+
+    labelValueBlock("Постачальник:", supplierLines);
+    labelValueBlock("Отримувач:", clientLines);
+    labelValueBlock("Умова продажу:", [opts.terms].filter(Boolean));
+
+    var title = kind === "invoice" ? "РАХУНОК №" + (opts.num || "—") : "Видаткова накладна №" + (opts.num || "—");
+    ws.mergeCells(r, 2, r, 8);
+    var titleCell = ws.getCell(r, 2);
+    titleCell.value = title;
+    titleCell.font = { bold: true, size: 13 };
+    titleCell.alignment = { horizontal: "center" };
+    r += 1;
+    ws.mergeCells(r, 2, r, 8);
+    var dateCell = ws.getCell(r, 2);
+    dateCell.value = "Від " + fmtDate(opts.date);
+    dateCell.alignment = { horizontal: "center" };
+    r += 2;
+
+    var headers = vat
+      ? ["№","Назва","О.В.","К-сть","Ціна, грн","ПДВ 20%","Сума, грн"]
+      : ["№","Назва","О.В.","К-сть","Ціна, грн","Сума, грн"];
+    var headerRow = r;
+    headers.forEach(function(h, i){
+      var c = ws.getCell(headerRow, 2 + i);
+      c.value = h;
+      c.font = { bold: true };
+      c.border = THIN_BORDER;
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F1F2" } };
+      c.alignment = { vertical: "middle", horizontal: i === 1 ? "left" : "center" };
+    });
+    r += 1;
+
+    items.forEach(function(it, idx){
+      var base = vat ? it.sum / 1.2 : it.sum;
+      var vatSum = vat ? it.sum - base : 0;
+      var vals = vat
+        ? [idx + 1, it.name, it.unit, it.qty, it.price, vatSum, it.sum]
+        : [idx + 1, it.name, it.unit, it.qty, it.price, it.sum];
+      vals.forEach(function(v, i){
+        var c = ws.getCell(r, 2 + i);
+        c.value = v;
+        c.border = THIN_BORDER;
+        if(i >= 3) c.numFmt = "#,##0.00";
+        if(i === 1) c.alignment = { horizontal: "left" };
+        else c.alignment = { horizontal: "center" };
+      });
+      r += 1;
+    });
+
+    var lastCol = 2 + headers.length - 1;
+    var labelEndCol = lastCol - 1;
+
+    function totalRow(label, value){
+      ws.mergeCells(r, 2, r, labelEndCol);
+      var lc = ws.getCell(r, 2);
+      lc.value = label;
+      lc.alignment = { horizontal: "right" };
+      var vc = ws.getCell(r, lastCol);
+      vc.value = value;
+      vc.numFmt = "#,##0.00";
+      r += 1;
+    }
+
+    if(vat){
+      totalRow("Всього без ПДВ:", baseTotal);
+      totalRow("у т.ч. ПДВ 20%:", vatTotal);
+      totalRow("Всього з ПДВ:", total);
+    } else {
+      totalRow("Всього без ПДВ:", total);
+    }
+
+    r += 1;
+    ws.mergeCells(r, 2, r, lastCol);
+    ws.getCell(r, 2).value = "Всього на суму:";
+    r += 1;
+    ws.mergeCells(r, 2, r, lastCol);
+    ws.getCell(r, 2).value = sumToWordsUAH(total) + ".";
+    r += 3;
+
+    var underline = "______________________";
+    if(kind === "invoice"){
+      ws.getCell(r, 2).value = "Виписав(ла): " + (opts.s_signer || "") + underline;
+      ws.getCell(r, 6).value = "Підпис" + underline;
+    } else {
+      ws.getCell(r, 2).value = "Від постачальника*: " + (opts.s_signer || "") + underline;
+      ws.getCell(r, 6).value = "Отримав(ла):" + underline;
+    }
+  }
+
+  function exportXlsxOne(kind){
+    if(typeof ExcelJS === "undefined"){
+      alert("Бібліотека для Excel ще завантажується. Перевірте з'єднання з інтернетом і спробуйте ще раз за кілька секунд.");
+      return;
+    }
+    var opts = collectOpts();
+    if(opts.items.length === 0){
+      alert("Додайте хоча б один товар.");
+      return;
+    }
+    var num = kind === "invoice" ? $("d_num_invoice").value.trim() : $("d_num_nakl").value.trim();
+    var sheetName = kind === "invoice" ? "Рахунок" : "Накладна";
+    var wb = new ExcelJS.Workbook();
+    addDocSheet(wb, sheetName, kind, Object.assign({}, opts, { num: num }));
+    wb.xlsx.writeBuffer().then(function(buf){
+      var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      var fname = docFileBaseName(kind, opts.c_name) + ".xlsx";
+      a.href = url;
+      a.download = fname;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }).catch(function(err){
+      alert("Не вдалося сформувати Excel-файл: " + err.message);
+    });
+  }
+
+  // ---------- wiring ----------
+  function initEvents(){
+    supplierFields.forEach(function(id){
+      $(id).addEventListener("input", function(){ saveSupplier(); render(); });
+      $(id).addEventListener("change", function(){ saveSupplier(); render(); });
+    });
+    ["c_name","c_edrpou","c_address","c_iban","c_mfo","c_bank","d_num_invoice","d_num_nakl","d_date","d_terms"].forEach(function(id){
+      $(id).addEventListener("input", render);
+    });
+    $("addRowBtn").addEventListener("click", function(){ addRow(); render(); });
+    $("printInvoiceBtn").addEventListener("click", function(){ printOne("invoice"); });
+    $("printNaklBtn").addEventListener("click", function(){ printOne("nakladna"); });
+    $("xlsInvoiceBtn").addEventListener("click", function(){ exportXlsxOne("invoice"); });
+    $("xlsNaklBtn").addEventListener("click", function(){ exportXlsxOne("nakladna"); });
+    $("clearItemsBtn").addEventListener("click", function(){
+      itemsBody.innerHTML = "";
+      addRow();
+      render();
+    });
+    $("newDocBtn").addEventListener("click", function(){
+      var n = nextCounter();
+      localStorage.setItem(COUNTER_KEY, String(n));
+      $("d_num_invoice").value = n;
+      $("d_num_nakl").value = n;
+      $("d_date").value = new Date().toISOString().slice(0,10);
+      render();
+    });
+  }
+
+  function init(){
+    loadSupplier();
+    $("d_date").value = new Date().toISOString().slice(0,10);
+    var n = nextCounter();
+    localStorage.setItem(COUNTER_KEY, String(n));
+    $("d_num_invoice").value = n;
+    $("d_num_nakl").value = n;
+    addRow({ qty: 1 });
+    initEvents();
+    render();
+  }
+
+  document.addEventListener("DOMContentLoaded", init);
+})();
+</script>
+</body>
+</html>

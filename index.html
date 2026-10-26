@@ -709,6 +709,9 @@
     var html = renderDoc(kind, Object.assign({}, opts, { num: docNumber(kind) }));
     var wrap = buildOffscreenDoc(html);
     var target = wrap.querySelector(".doc-page");
+    target.style.border = "none";
+    target.style.borderRadius = "0";
+    target.style.margin = "0";
 
     html2canvas(target, { scale: 2, backgroundColor: "#ffffff" }).then(function(canvas){
       var imgData = canvas.toDataURL("image/png");

@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Генератор рахунків та видаткових накладних</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   :root{
     --ink:#1c2027;
@@ -104,7 +106,6 @@
     color:var(--ink-soft);
   }
   .checkline input{width:auto;}
-  .fieldnote{ font-size:11.5px; color:var(--ink-soft); margin-top:3px; }
 
   table.items{
     width:100%;
@@ -243,20 +244,24 @@
     min-width:220px;
   }
 
+  /* Поля сторінки = 0: браузер не має де вивести дату, заголовок і шлях до файлу.
+     Відступи від краю паперу задає padding самого документа. */
+  @page{ size:A4; margin:0; }
+
   @media print{
-    body{ background:#fff; }
+    html, body{ margin:0; padding:0; background:#fff; }
     .no-print{ display:none !important; }
     .app{ padding:0; max-width:none; }
+    #docs{ margin:0; }
     .doc-page{
       border:none;
       border-radius:0;
       margin:0;
-      padding:0;
+      padding:14mm;
       page-break-after:always;
     }
     .doc-page:last-child{ page-break-after:auto; }
   }
-  @page{ size:A4; margin:14mm; }
 </style>
 </head>
 <body>
@@ -353,18 +358,22 @@
     </div>
 
     <div class="toolbar">
-      <button class="btn btn-primary" id="printInvoiceBtn">Рахунок — друк / PDF</button>
-      <button class="btn btn-primary" id="printNaklBtn">Накладна — друк / PDF</button>
+      <button class="btn btn-primary" id="pdfInvoiceBtn">Рахунок — завантажити PDF</button>
+      <button class="btn btn-primary" id="pdfNaklBtn">Накладна — завантажити PDF</button>
     </div>
     <div class="toolbar">
       <button class="btn btn-primary" id="xlsInvoiceBtn" style="background:#2c6e4f; border-color:#2c6e4f;">Рахунок — Excel (.xlsx)</button>
       <button class="btn btn-primary" id="xlsNaklBtn" style="background:#2c6e4f; border-color:#2c6e4f;">Накладна — Excel (.xlsx)</button>
     </div>
     <div class="toolbar">
+      <button class="btn btn-ghost" id="printInvoiceBtn">Рахунок — друк (діалог браузера)</button>
+      <button class="btn btn-ghost" id="printNaklBtn">Накладна — друк (діалог браузера)</button>
+    </div>
+    <div class="toolbar">
       <button class="btn" id="newDocBtn">Новий документ (номер +1)</button>
       <button class="btn btn-ghost" id="clearItemsBtn">Очистити товари</button>
     </div>
-    <p class="hint">Порада: дату/час і шлях до файлу зверху й знизу PDF додає сам браузер (це не частина сторінки). У вікні друку відкрийте «Додаткові налаштування» → знімніть галочку «Верхні та нижні колонтитули» (Headers and footers) — тоді ці рядки не потраплять у PDF.</p>
+    <p class="hint">Кнопки «завантажити PDF» одразу зберігають файл — без діалогу друку і без колонтитулів (працює на Mac і Windows). Кнопки «друк» відкривають стандартний діалог друку браузера для друку на папері.</p>
   </div>
 
   <div id="docs"></div>
@@ -660,6 +669,7 @@
     };
   }
 
+  // ---------- file names: Рахунок_Назва_отримувача / Видаткова_накладна_Назва_отримувача ----------
   function sanitizeFileName(s){
     return String(s || "").trim().replace(/[\\/:*?"<>|]+/g, "").replace(/\s+/g, "_");
   }
@@ -669,18 +679,78 @@
     return (kind === "invoice" ? "Рахунок_" : "Видаткова_накладна_") + client;
   }
 
+  function docNumber(kind){
+    return kind === "invoice" ? $("d_num_invoice").value.trim() : $("d_num_nakl").value.trim();
+  }
+
+  // ---------- PDF download (without the browser print dialog) ----------
+  function buildOffscreenDoc(html){
+    var wrap = document.createElement("div");
+    wrap.style.position = "fixed";
+    wrap.style.left = "-10000px";
+    wrap.style.top = "0";
+    wrap.style.width = "794px";
+    wrap.style.background = "#ffffff";
+    wrap.innerHTML = html;
+    document.body.appendChild(wrap);
+    return wrap;
+  }
+
+  function downloadPdfOne(kind){
+    if(typeof html2canvas === "undefined" || typeof window.jspdf === "undefined"){
+      alert("Бібліотеки для PDF ще завантажуються. Перевірте з'єднання з інтернетом і спробуйте ще раз за кілька секунд.");
+      return;
+    }
+    var opts = collectOpts();
+    if(opts.items.length === 0){
+      alert("Додайте хоча б один товар.");
+      return;
+    }
+    var html = renderDoc(kind, Object.assign({}, opts, { num: docNumber(kind) }));
+    var wrap = buildOffscreenDoc(html);
+    var target = wrap.querySelector(".doc-page");
+
+    html2canvas(target, { scale: 2, backgroundColor: "#ffffff" }).then(function(canvas){
+      var imgData = canvas.toDataURL("image/png");
+      var jsPDF = window.jspdf.jsPDF;
+      var pdf = new jsPDF({ unit: "mm", format: "a4" });
+      var margin = 12;
+      var pageWidth = pdf.internal.pageSize.getWidth();
+      var pageHeight = pdf.internal.pageSize.getHeight();
+      var imgWidth = pageWidth - margin * 2;
+      var usableHeight = pageHeight - margin * 2;
+      var imgHeight = canvas.height * imgWidth / canvas.width;
+
+      var heightLeft = imgHeight;
+      var position = margin;
+      pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight);
+      heightLeft -= usableHeight;
+      while(heightLeft > 0){
+        position = margin - (imgHeight - heightLeft);
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight);
+        heightLeft -= usableHeight;
+      }
+      pdf.save(docFileBaseName(kind, opts.c_name) + ".pdf");
+    }).catch(function(err){
+      alert("Не вдалося сформувати PDF: " + err.message);
+    }).finally(function(){
+      wrap.remove();
+    });
+  }
+
+  // ---------- browser print dialog (optional, for paper) ----------
   function printOne(kind){
     var opts = collectOpts();
     if(opts.items.length === 0){
       alert("Додайте хоча б один товар.");
       return;
     }
-    var num = kind === "invoice" ? $("d_num_invoice").value.trim() : $("d_num_nakl").value.trim();
     var docsEl = $("docs");
     var previous = docsEl.innerHTML;
     var previousTitle = document.title;
     document.title = docFileBaseName(kind, opts.c_name);
-    docsEl.innerHTML = renderDoc(kind, Object.assign({}, opts, { num: num }));
+    docsEl.innerHTML = renderDoc(kind, Object.assign({}, opts, { num: docNumber(kind) }));
     window.print();
     docsEl.innerHTML = previous;
     document.title = previousTitle;
@@ -846,17 +916,15 @@
       alert("Додайте хоча б один товар.");
       return;
     }
-    var num = kind === "invoice" ? $("d_num_invoice").value.trim() : $("d_num_nakl").value.trim();
     var sheetName = kind === "invoice" ? "Рахунок" : "Накладна";
     var wb = new ExcelJS.Workbook();
-    addDocSheet(wb, sheetName, kind, Object.assign({}, opts, { num: num }));
+    addDocSheet(wb, sheetName, kind, Object.assign({}, opts, { num: docNumber(kind) }));
     wb.xlsx.writeBuffer().then(function(buf){
       var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       var url = URL.createObjectURL(blob);
       var a = document.createElement("a");
-      var fname = docFileBaseName(kind, opts.c_name) + ".xlsx";
       a.href = url;
-      a.download = fname;
+      a.download = docFileBaseName(kind, opts.c_name) + ".xlsx";
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -876,6 +944,8 @@
       $(id).addEventListener("input", render);
     });
     $("addRowBtn").addEventListener("click", function(){ addRow(); render(); });
+    $("pdfInvoiceBtn").addEventListener("click", function(){ downloadPdfOne("invoice"); });
+    $("pdfNaklBtn").addEventListener("click", function(){ downloadPdfOne("nakladna"); });
     $("printInvoiceBtn").addEventListener("click", function(){ printOne("invoice"); });
     $("printNaklBtn").addEventListener("click", function(){ printOne("nakladna"); });
     $("xlsInvoiceBtn").addEventListener("click", function(){ exportXlsxOne("invoice"); });

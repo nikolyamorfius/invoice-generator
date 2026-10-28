@@ -173,6 +173,84 @@
     margin-top:14px;
   }
 
+  /* ---- Історія документів ---- */
+  .hist-count{ font-weight:400; color:var(--ink-soft); font-size:13px; }
+  .hist-head, .hist-main{
+    display:grid;
+    grid-template-columns:96px minmax(0,1fr) 150px 130px;
+    gap:12px;
+    align-items:center;
+  }
+  .hist-head{
+    font-size:12px;
+    color:var(--ink-soft);
+    font-weight:600;
+    padding:0 52px 6px 12px;
+    border-bottom:1px solid var(--line);
+  }
+  .hist-head span:nth-child(4){ text-align:right; }
+  .hist-head span:nth-child(5){ display:none; }
+  .hist-item{ border-bottom:1px solid var(--line-soft); }
+  .hist-row{ display:flex; align-items:center; }
+  .hist-main{
+    flex:1;
+    min-width:0;
+    padding:10px 12px;
+    background:none;
+    border:none;
+    font:inherit;
+    font-size:13.5px;
+    color:var(--ink);
+    text-align:left;
+    cursor:pointer;
+    border-radius:6px;
+  }
+  .hist-main:hover{ background:var(--bg); }
+  .hist-main:focus-visible, .hist-del:focus-visible{
+    outline:2px solid var(--accent);
+    outline-offset:1px;
+  }
+  .hist-item.open .hist-main{ background:var(--accent-soft); }
+  .hist-client{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hist-num{ white-space:nowrap; }
+  .hist-sum{ text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; font-weight:600; }
+  .hist-del{
+    flex:0 0 34px;
+    height:34px;
+    margin-left:6px;
+    border:none;
+    background:none;
+    cursor:pointer;
+    color:var(--ink-soft);
+    font-size:16px;
+    border-radius:6px;
+  }
+  .hist-del:hover{ color:var(--danger); background:#f3e6e6; }
+  .hist-detail{
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:10px;
+    padding:6px 12px 14px;
+    row-gap:10px;
+  }
+  .hist-meta{ font-size:12.5px; color:var(--ink-soft); flex:0 0 100%; }
+  .hist-doc{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-right:14px; }
+  .hist-doc-title{ font-size:13px; font-weight:600; }
+  .hist-doc-date{ font-size:13px; color:var(--ink-soft); margin-right:2px; }
+  @media (max-width:640px){
+    .hist-head{ display:none; }
+    .hist-main{
+      grid-template-columns:1fr auto;
+      grid-template-areas:"client sum" "date num";
+      row-gap:2px;
+    }
+    .hist-client{ grid-area:client; font-weight:600; }
+    .hist-sum{ grid-area:sum; }
+    .hist-date{ grid-area:date; color:var(--ink-soft); font-size:12.5px; }
+    .hist-num{ grid-area:num; color:var(--ink-soft); font-size:12.5px; text-align:right; }
+  }
+
   /* ---- Printable documents (mirrors the uploaded XLS templates) ---- */
   #docs{ margin-top:26px; }
   .doc-page{
@@ -373,6 +451,15 @@
       <button class="btn btn-ghost" id="clearItemsBtn">Очистити товари</button>
     </div>
     <p class="hint">Кнопки «завантажити PDF» одразу зберігають файл — без діалогу друку і без колонтитулів (працює на Mac і Windows). Кнопки «друк» відкривають стандартний діалог друку браузера для друку на папері.</p>
+
+    <div class="panel" id="historyPanel" style="margin-top:22px;">
+      <h2>Історія документів <span class="hist-count" id="historyCount"></span></h2>
+      <div class="hist-head" aria-hidden="true">
+        <span>Дата</span><span>Організація</span><span>Документ</span><span>Сума</span><span></span>
+      </div>
+      <div id="historyList"></div>
+      <p class="hint">У історію потрапляють документи, які ви завантажили (PDF, Excel) або відправили на друк. Натисніть на рядок, щоб розгорнути його й завантажити і рахунок, і видаткову ще раз. Історія зберігається лише в цьому браузері на цьому пристрої.</p>
+    </div>
   </div>
 
   <div id="docs"></div>
@@ -550,6 +637,15 @@
 
   function fmt(n){
     return n.toLocaleString("uk-UA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  // Сьогоднішня дата у форматі РРРР-ММ-ДД за місцевим часом користувача
+  // (toISOString дає UTC, і між 00:00 і 03:00 за Києвом це ще «вчора»).
+  function localISODate(){
+    var d = new Date();
+    var m = String(d.getMonth() + 1).padStart(2, "0");
+    var day = String(d.getDate()).padStart(2, "0");
+    return d.getFullYear() + "-" + m + "-" + day;
   }
 
   function fmtDate(iso){
@@ -891,22 +987,31 @@
     return pdf;
   }
 
-  function downloadPdfOne(kind){
+  // Збереження PDF з повного набору даних документа (opts містить і номер).
+  // Повертає true, якщо файл сформовано.
+  function savePdfFile(kind, opts){
     if(typeof window.jspdf === "undefined"){
       alert("Бібліотека для PDF ще завантажується. Перевірте з'єднання з інтернетом і спробуйте ще раз за кілька секунд.");
-      return;
+      return false;
     }
+    try{
+      var pdf = buildPdfDoc(kind, opts);
+      pdf.save(docFileBaseName(kind, opts.c_name) + ".pdf");
+      return true;
+    }catch(err){
+      alert("Не вдалося сформувати PDF: " + err.message);
+      return false;
+    }
+  }
+
+  function downloadPdfOne(kind){
     var opts = collectOpts();
     if(opts.items.length === 0){
       alert("Додайте хоча б один товар.");
       return;
     }
-    try{
-      var pdf = buildPdfDoc(kind, Object.assign({}, opts, { num: docNumber(kind) }));
-      pdf.save(docFileBaseName(kind, opts.c_name) + ".pdf");
-    }catch(err){
-      alert("Не вдалося сформувати PDF: " + err.message);
-    }
+    var full = Object.assign({}, opts, { num: docNumber(kind) });
+    if(savePdfFile(kind, full)) recordCurrent(opts);
   }
 
   // ---------- browser print dialog (optional, for paper) ----------
@@ -924,6 +1029,7 @@
     window.print();
     docsEl.innerHTML = previous;
     document.title = previousTitle;
+    recordCurrent(opts);
   }
 
   function render(){
@@ -1076,19 +1182,16 @@
     }
   }
 
-  function exportXlsxOne(kind){
+  // Збереження Excel з повного набору даних документа (opts містить і номер).
+  // onDone викликається після того, як файл сформовано.
+  function saveXlsxFile(kind, opts, onDone){
     if(typeof ExcelJS === "undefined"){
       alert("Бібліотека для Excel ще завантажується. Перевірте з'єднання з інтернетом і спробуйте ще раз за кілька секунд.");
       return;
     }
-    var opts = collectOpts();
-    if(opts.items.length === 0){
-      alert("Додайте хоча б один товар.");
-      return;
-    }
     var sheetName = kind === "invoice" ? "Рахунок" : "Накладна";
     var wb = new ExcelJS.Workbook();
-    addDocSheet(wb, sheetName, kind, Object.assign({}, opts, { num: docNumber(kind) }));
+    addDocSheet(wb, sheetName, kind, opts);
     wb.xlsx.writeBuffer().then(function(buf){
       var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       var url = URL.createObjectURL(blob);
@@ -1099,9 +1202,175 @@
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+      if(onDone) onDone();
     }).catch(function(err){
       alert("Не вдалося сформувати Excel-файл: " + err.message);
     });
+  }
+
+  function exportXlsxOne(kind){
+    var opts = collectOpts();
+    if(opts.items.length === 0){
+      alert("Додайте хоча б один товар.");
+      return;
+    }
+    var full = Object.assign({}, opts, { num: docNumber(kind) });
+    saveXlsxFile(kind, full, function(){ recordCurrent(opts); });
+  }
+
+  // ---------- історія документів (зберігається в цьому браузері) ----------
+  // Один запис = пара документів (рахунок + видаткова) з одним набором даних.
+  // Запис створюється, коли документ завантажено (PDF/Excel) або відправлено на друк.
+  var HISTORY_KEY = "invoiceGen.history.v1";
+  var HISTORY_MAX = 300;
+  var historyOpenId = null;
+
+  // Записи старого формату (один документ в записі) приводимо до нового.
+  function normalizeEntry(h){
+    if(h && h.numInvoice === undefined && h.numNakl === undefined){
+      h.numInvoice = h.num;
+      h.numNakl = h.num;
+      h.key = [h.numInvoice, h.numNakl, h.client, h.date].join("|");
+    }
+    return h;
+  }
+
+  function loadHistory(){
+    try{
+      var raw = localStorage.getItem(HISTORY_KEY);
+      var list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list.map(normalizeEntry) : [];
+    }catch(e){ return []; }
+  }
+
+  function storeHistory(list){
+    try{
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+      return true;
+    }catch(e){ return false; }
+  }
+
+  function docTotal(opts){
+    return opts.items.reduce(function(a, b){ return a + b.sum; }, 0);
+  }
+
+  // Той самий набір (№ рахунку + № накладної + клієнт + дата) оновлюється, а не дублюється:
+  // PDF, Excel і друк одного й того ж документа дають один рядок.
+  function recordCurrent(opts){
+    var numInvoice = $("d_num_invoice").value.trim();
+    var numNakl = $("d_num_nakl").value.trim();
+    var list = loadHistory();
+    var key = [numInvoice, numNakl, opts.c_name, opts.date].join("|");
+    var entry = {
+      id: String(Date.now()) + "-" + Math.random().toString(36).slice(2, 7),
+      key: key,
+      savedAt: Date.now(),
+      date: opts.date,
+      client: opts.c_name,
+      numInvoice: numInvoice,
+      numNakl: numNakl,
+      total: docTotal(opts),
+      data: opts
+    };
+    list = list.filter(function(h){ return h.key !== key; });
+    list.unshift(entry);
+    if(list.length > HISTORY_MAX) list = list.slice(0, HISTORY_MAX);
+    storeHistory(list);
+    historyOpenId = null;
+    renderHistory();
+  }
+
+  // Дані конкретного документа зі збереженого запису
+  // Видаткова може мати власну дату (entry.dateNakl) — її змінює кнопка «Змінити дату на сьогоднішню».
+  // Рахунок і решта даних лишаються з моменту збереження.
+  function entryDocData(entry, kind){
+    var data = Object.assign({}, entry.data, { num: kind === "invoice" ? entry.numInvoice : entry.numNakl });
+    if(kind === "nakladna" && entry.dateNakl) data.date = entry.dateNakl;
+    return data;
+  }
+
+  function deleteHistory(id){
+    var list = loadHistory().filter(function(h){ return h.id !== id; });
+    storeHistory(list);
+    if(historyOpenId === id) historyOpenId = null;
+    renderHistory();
+  }
+
+  function fmtShortDate(iso){
+    if(!iso) return "—";
+    var p = String(iso).split("-");
+    return p.length === 3 ? p[2] + "." + p[1] + "." + p[0] : iso;
+  }
+
+  function histDocButtons(kind, title, num, date, withToday){
+    return '<div class="hist-doc">' +
+      '<span class="hist-doc-title">' + title + ' №' + escapeHtml(num || "—") + '</span>' +
+      '<span class="hist-doc-date">від ' + escapeHtml(fmtShortDate(date)) + '</span>' +
+      '<button type="button" class="btn btn-primary" data-act="pdf" data-kind="' + kind + '">PDF</button>' +
+      '<button type="button" class="btn btn-primary" data-act="xlsx" data-kind="' + kind + '" style="background:#2c6e4f; border-color:#2c6e4f;">Excel (.xlsx)</button>' +
+      (withToday ? '<button type="button" class="btn" data-act="today" data-kind="' + kind + '">Змінити дату на сьогоднішню</button>' : '') +
+    '</div>';
+  }
+
+  function renderHistory(){
+    var box = $("historyList");
+    if(!box) return;
+    var list = loadHistory();
+    $("historyCount").textContent = list.length ? "(" + list.length + ")" : "";
+    if(!list.length){
+      box.innerHTML = '<p class="hint" style="margin:0;">Поки порожньо. Після завантаження PDF, Excel або друку документ з’явиться тут.</p>';
+      return;
+    }
+    box.innerHTML = list.map(function(h){
+      var open = h.id === historyOpenId;
+      var itemsCount = h.data && h.data.items ? h.data.items.length : 0;
+      return '<div class="hist-item' + (open ? ' open' : '') + '" data-id="' + escapeHtml(h.id) + '">' +
+        '<div class="hist-row">' +
+          '<button type="button" class="hist-main" data-act="toggle" aria-expanded="' + (open ? "true" : "false") + '">' +
+            '<span class="hist-date">' + escapeHtml(fmtShortDate(h.date)) + '</span>' +
+            '<span class="hist-client">' + escapeHtml(h.client || "—") + '</span>' +
+            '<span class="hist-num">Рахунок №' + escapeHtml(h.numInvoice || "—") + '</span>' +
+            '<span class="hist-sum">' + fmt(h.total || 0) + ' грн</span>' +
+          '</button>' +
+          '<button type="button" class="hist-del" data-act="delete" title="Видалити з історії" aria-label="Видалити з історії">✕</button>' +
+        '</div>' +
+        (open
+          ? '<div class="hist-detail">' +
+              '<span class="hist-meta">Позицій: ' + itemsCount + '</span>' +
+              histDocButtons("invoice", "Рахунок", h.numInvoice, h.date, false) +
+              histDocButtons("nakladna", "Видаткова накладна", h.numNakl, h.dateNakl || h.date, true) +
+            '</div>'
+          : '') +
+      '</div>';
+    }).join("");
+  }
+
+  function onHistoryClick(e){
+    var btn = e.target.closest("[data-act]");
+    if(!btn) return;
+    var item = btn.closest(".hist-item");
+    if(!item) return;
+    var id = item.getAttribute("data-id");
+    var act = btn.getAttribute("data-act");
+    var kind = btn.getAttribute("data-kind");
+    var entry = loadHistory().filter(function(h){ return h.id === id; })[0];
+    if(!entry) return;
+
+    if(act === "toggle"){
+      historyOpenId = (historyOpenId === id) ? null : id;
+      renderHistory();
+    } else if(act === "delete"){
+      if(confirm("Видалити цей запис з історії?")) deleteHistory(id);
+    } else if(act === "pdf"){
+      savePdfFile(kind, entryDocData(entry, kind));
+    } else if(act === "xlsx"){
+      saveXlsxFile(kind, entryDocData(entry, kind));
+    } else if(act === "today"){
+      var list = loadHistory();
+      list.forEach(function(h){ if(h.id === id) h.dateNakl = localISODate(); });
+      storeHistory(list);
+      renderHistory();
+    }
   }
 
   // ---------- wiring ----------
@@ -1120,6 +1389,7 @@
     $("printNaklBtn").addEventListener("click", function(){ printOne("nakladna"); });
     $("xlsInvoiceBtn").addEventListener("click", function(){ exportXlsxOne("invoice"); });
     $("xlsNaklBtn").addEventListener("click", function(){ exportXlsxOne("nakladna"); });
+    $("historyList").addEventListener("click", onHistoryClick);
     $("clearItemsBtn").addEventListener("click", function(){
       itemsBody.innerHTML = "";
       addRow();
@@ -1130,14 +1400,14 @@
       localStorage.setItem(COUNTER_KEY, String(n));
       $("d_num_invoice").value = n;
       $("d_num_nakl").value = n;
-      $("d_date").value = new Date().toISOString().slice(0,10);
+      $("d_date").value = localISODate();
       render();
     });
   }
 
   function init(){
     loadSupplier();
-    $("d_date").value = new Date().toISOString().slice(0,10);
+    $("d_date").value = localISODate();
     var n = nextCounter();
     localStorage.setItem(COUNTER_KEY, String(n));
     $("d_num_invoice").value = n;
@@ -1145,6 +1415,7 @@
     addRow({ qty: 1 });
     initEvents();
     render();
+    renderHistory();
   }
 
   document.addEventListener("DOMContentLoaded", init);
